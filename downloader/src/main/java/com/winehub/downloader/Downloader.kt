@@ -14,6 +14,12 @@ class Downloader {
             if (existing > 0L) setRequestProperty("Range", "bytes=$existing-")
             connectTimeout = 15_000
             readTimeout = 30_000
+            instanceFollowRedirects = true
+        }
+        val responseCode = connection.responseCode
+        if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+            connection.disconnect()
+            throw RuntimeException("Download failed: HTTP $responseCode")
         }
         connection.inputStream.use { input ->
             RandomAccessFile(destination, "rw").use { raf ->

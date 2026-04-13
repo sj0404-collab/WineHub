@@ -82,10 +82,12 @@ class AiEngine(private val context: Context) {
     }
 
     private fun detectVulkanApi(): String {
+        val glRenderer = android.opengl.GLES20.glGetString(android.opengl.GLES20.GL_RENDERER) ?: ""
         return when {
             Build.VERSION.SDK_INT >= 34 -> "1.3.0"
             Build.VERSION.SDK_INT >= 30 -> "1.2.0"
-            else -> "1.1.0"
+            Build.VERSION.SDK_INT >= 26 -> "1.1.0"
+            else -> "1.0.0"
         }
     }
 

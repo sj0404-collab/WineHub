@@ -8,7 +8,7 @@ android {
     compileSdk = 34
     defaultConfig {
         minSdk = 26
-        externalNativeBuild { cmake { cppFlags += "-std=c++20" } }
+        externalNativeBuild { cmake { cppFlags("-std=c++20") } }
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
