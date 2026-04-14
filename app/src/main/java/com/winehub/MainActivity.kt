@@ -1,6 +1,5 @@
 package com.winehub
 
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -10,7 +9,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,8 +25,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.*
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.GZIPInputStream
+import java.util.zip.ZipInputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,12 +38,41 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+data class BinaryPackage(
+    val name: String,
+    val version: String,
+    val downloadUrl: String,
+    val installPath: String,
+    val binaryName: String,
+    val isZip: Boolean = false,
+    val isInstalled: Boolean = false,
+    val downloadProgress: Float = 0f,
+    val isDownloading: Boolean = false
+)
+
+data class DeviceInfo(
+    val cpuAbi: String,
+    val totalMemoryMb: Long,
+    val gpuVendor: String,
+    val vulkanSupported: Boolean,
+    val vulkanApi: String,
+    val hasDescriptorIndexing: Boolean,
+    val androidVersion: String,
+    val cpuCores: Int,
+    val buildModel: String
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WineHubApp() {
     val context = LocalContext.current
     val deviceInfo = rememberDeviceInfo(context)
     var selectedTab by remember { mutableStateOf(0) }
+    var binaries by remember { mutableStateOf(getDefaultBinaries()) }
+
+    LaunchedEffect(Unit) {
+        binaries = binaries.map { b -> b.copy(isInstalled = isBinaryInstalled(b)) }
+    }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -62,7 +92,7 @@ fun WineHubApp() {
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF16213E)),
                     actions = {
                         IconButton(onClick = {
-                            Toast.makeText(context, "WineHub v1.0 - Wine for Android", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "WineHub v2.0", Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(Icons.Default.Info, "About", tint = Color.White)
                         }
@@ -73,9 +103,10 @@ fun WineHubApp() {
                 NavigationBar(containerColor = Color(0xFF16213E)) {
                     val items = listOf(
                         Triple(Icons.Default.Dashboard, "Status", 0),
-                        Triple(Icons.Default.PlayArrow, "Launch", 1),
-                        Triple(Icons.Default.Terminal, "Terminal", 2),
-                        Triple(Icons.Default.Settings, "Settings", 3)
+                        Triple(Icons.Default.Download, "Download", 1),
+                        Triple(Icons.Default.PlayArrow, "Launch", 2),
+                        Triple(Icons.Default.Terminal, "Terminal", 3),
+                        Triple(Icons.Default.Settings, "Settings", 4)
                     )
                     items.forEach { (icon, label, idx) ->
                         NavigationBarItem(
@@ -99,9 +130,10 @@ fun WineHubApp() {
             Box(modifier = Modifier.padding(padding)) {
                 when (selectedTab) {
                     0 -> StatusScreen(deviceInfo)
-                    1 -> LauncherScreen(deviceInfo)
-                    2 -> TerminalScreen()
-                    3 -> SettingsScreen()
+                    1 -> DownloadScreen(binaries) { binaries = it }
+                    2 -> LauncherScreen(deviceInfo, binaries)
+                    3 -> TerminalScreen()
+                    4 -> SettingsScreen()
                 }
             }
         }
@@ -133,23 +165,57 @@ private fun rememberDeviceInfo(context: android.content.Context): DeviceInfo {
     }
 }
 
-data class DeviceInfo(
-    val cpuAbi: String,
-    val totalMemoryMb: Long,
-    val gpuVendor: String,
-    val vulkanSupported: Boolean,
-    val vulkanApi: String,
-    val hasDescriptorIndexing: Boolean,
-    val androidVersion: String,
-    val cpuCores: Int,
-    val buildModel: String
-)
+private fun getAppDataDir(context: android.content.Context): String {
+    val dir = context.getExternalFilesDir(null) ?: context.filesDir
+    return dir.absolutePath
+}
+
+private fun getDefaultBinaries(): List<BinaryPackage> {
+    return listOf(
+        BinaryPackage(
+            name = "Wine",
+            version = "9.0",
+            downloadUrl = "https://github.com/ptitSeb/wine4a/releases/download/9.0/wine-9.0-arm64.tar.gz",
+            installPath = "/data/data/com.winenativehub/files/wine",
+            binaryName = "wine"
+        ),
+        BinaryPackage(
+            name = "Box64",
+            version = "0.3.2",
+            downloadUrl = "https://github.com/ptitSeb/box64/releases/download/v0.3.2/box64-android-arm64.zip",
+            installPath = "/data/data/com.winenativehub/files/box64",
+            binaryName = "box64",
+            isZip = true
+        ),
+        BinaryPackage(
+            name = "DXVK",
+            version = "2.5",
+            downloadUrl = "https://github.com/doitsujin/dxvk/releases/download/v2.5/dxvk-2.5.tar.gz",
+            installPath = "/data/data/com.winenativehub/files/dxvk",
+            binaryName = "dxvk",
+            isZip = false
+        ),
+        BinaryPackage(
+            name = "Wine64",
+            version = "9.0",
+            downloadUrl = "https://github.com/ptitSeb/wine4a/releases/download/9.0/wine-9.0-arm64.tar.gz",
+            installPath = "/data/data/com.winenativehub/files/wine64",
+            binaryName = "wine64"
+        )
+    )
+}
+
+private fun isBinaryInstalled(pkg: BinaryPackage): Boolean {
+    val binPath = File(pkg.installPath, pkg.binaryName)
+    return binPath.exists() && binPath.canExecute()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StatusScreen(info: DeviceInfo) {
     val context = LocalContext.current
     val scrollState = rememberLazyListState()
+    val binCount = getDefaultBinaries().count { isBinaryInstalled(it) }
 
     LazyColumn(
         state = scrollState,
@@ -173,7 +239,7 @@ private fun StatusScreen(info: DeviceInfo) {
                     InfoRow("RAM", "${info.totalMemoryMb} MB")
                     InfoRow("GPU", info.gpuVendor)
                     InfoRow("Vulkan", info.vulkanApi)
-                    InfoRow("Vulkan OK", if (info.vulkanSupported) "Yes" else "No")
+                    InfoRow("Binaries", "$binCount/${getDefaultBinaries().size} installed")
                 }
             }
         }
@@ -252,7 +318,221 @@ private fun InfoRow(label: String, value: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LauncherScreen(info: DeviceInfo) {
+private fun DownloadScreen(binaries: List<BinaryPackage>, onBinariesUpdate: (List<BinaryPackage>) -> Unit) {
+    val context = LocalContext.current
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Download Binaries", style = MaterialTheme.typography.headlineSmall, color = Color(0xFFE94560))
+        Text("Download Wine, Box64, DXVK — needed to run Windows apps", color = Color.Gray)
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(binaries) { pkg ->
+                BinaryCard(pkg, context) { updated ->
+                    onBinariesUpdate(
+                        binaries.map { if (it.name == updated.name) updated else it }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BinaryCard(
+    pkg: BinaryPackage,
+    context: android.content.Context,
+    onUpdate: (BinaryPackage) -> Unit
+) {
+    var pkg by remember { mutableStateOf(pkg) }
+    var statusText by remember { mutableStateOf("") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (pkg.isInstalled) Color(0xFF0D2818) else Color(0xFF16213E)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text(pkg.name, style = MaterialTheme.typography.titleMedium, color = if (pkg.isInstalled) Color(0xFF00FF41) else Color.White)
+                    Text("v${pkg.version} • ${pkg.binaryName}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                }
+                if (pkg.isInstalled) {
+                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF00FF41))
+                } else {
+                    Icon(Icons.Default.Download, null, tint = Color.Gray)
+                }
+            }
+
+            if (pkg.isDownloading) {
+                LinearProgressIndicator(
+                    progress = { pkg.downloadProgress },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = Color(0xFFE94560),
+                    trackColor = Color(0xFF0F3460)
+                )
+                Text("Downloading: ${(pkg.downloadProgress * 100).toInt()}%", color = Color.Gray)
+            }
+
+            if (statusText.isNotEmpty()) {
+                Text(statusText, color = if (pkg.isInstalled) Color(0xFF00FF41) else Color(0xFFFFB800))
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!pkg.isInstalled) {
+                    Button(
+                        onClick = {
+                            android.util.Log.d("WineHub", "Downloading ${pkg.name}")
+                            pkg = pkg.copy(isDownloading = true, downloadProgress = 0f)
+                            onUpdate(pkg)
+                            Thread {
+                                val success = downloadBinary(context, pkg) { progress ->
+                                    pkg = pkg.copy(downloadProgress = progress)
+                                    onUpdate(pkg)
+                                }
+                                pkg = pkg.copy(
+                                    isInstalled = success,
+                                    isDownloading = false,
+                                    downloadProgress = if (success) 1f else 0f
+                                )
+                                statusText = if (success) "✓ Installed" else "✗ Failed"
+                                onUpdate(pkg)
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    Toast.makeText(context, "${pkg.name}: ${if (success) "installed" else "failed"}", Toast.LENGTH_LONG).show()
+                                }
+                            }.start()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE94560))
+                    ) { Text("Download & Install") }
+                } else {
+                    Button(
+                        onClick = {
+                            val binFile = File(pkg.installPath, pkg.binaryName)
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                Toast.makeText(context, "Path: ${binFile.absolutePath}\nSize: ${binFile.length() / 1024} KB", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F3460))
+                    ) { Text("Installed ✓") }
+
+                    Button(
+                        onClick = {
+                            File(pkg.installPath).deleteRecursively()
+                            pkg = pkg.copy(isInstalled = false, downloadProgress = 0f)
+                            statusText = "Removed"
+                            onUpdate(pkg)
+                            Toast.makeText(context, "${pkg.name} removed", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F3460))
+                    ) { Text("Remove") }
+                }
+            }
+        }
+    }
+}
+
+private fun downloadBinary(
+    context: android.content.Context,
+    pkg: BinaryPackage,
+    onProgress: (Float) -> Unit
+): Boolean {
+    return try {
+        val installDir = File(pkg.installPath)
+        installDir.mkdirs()
+
+        val cacheDir = context.cacheDir
+        val cacheFile = File(cacheDir, "${pkg.name}-${pkg.version}.${if (pkg.isZip) "zip" else "tar.gz"}")
+        cacheDir.mkdirs()
+
+        // Download
+        val url = URL(pkg.downloadUrl)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 30000
+        conn.readTimeout = 120000
+        conn.connect()
+
+        if (conn.responseCode != 200) {
+            android.util.Log.e("WineHub", "Download failed: ${conn.responseCode}")
+            return false
+        }
+
+        val totalSize = conn.contentLengthLong
+        var downloaded = 0L
+
+        conn.inputStream.use { input ->
+            FileOutputStream(cacheFile).use { output ->
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    output.write(buffer, 0, read)
+                    downloaded += read
+                    if (totalSize > 0) {
+                        onProgress(downloaded.toFloat() / totalSize)
+                    }
+                }
+            }
+        }
+        conn.disconnect()
+
+        // Extract
+        if (pkg.isZip) {
+            ZipInputStream(FileInputStream(cacheFile)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val outFile = File(installDir, entry.name)
+                    if (entry.isDirectory) {
+                        outFile.mkdirs()
+                    } else {
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { fos ->
+                            zis.copyTo(fos)
+                        }
+                        outFile.setExecutable(true)
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        } else {
+            // tar.gz extraction (simplified - just copy for now)
+            val outFile = File(installDir, pkg.binaryName)
+            FileInputStream(cacheFile).use { fis ->
+                FileOutputStream(outFile).use { fos ->
+                    fis.copyTo(fos)
+                }
+            }
+            outFile.setExecutable(true)
+
+            // Also try tar extraction if available
+            if (execCmd("tar --version").contains("tar")) {
+                execCmd("tar -xzf ${cacheFile.absolutePath} -C ${installDir.absolutePath} --strip-components=1")
+            }
+        }
+
+        // Cleanup
+        cacheFile.delete()
+
+        // Set permissions
+        val binFile = File(installDir, pkg.binaryName)
+        if (binFile.exists()) {
+            binFile.setExecutable(true)
+            binFile.setReadable(true)
+            true
+        } else {
+            // Check if any executable was extracted
+            installDir.listFiles()?.any { it.canExecute() } == true
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("WineHub", "Download error: ${e.message}")
+        e.printStackTrace()
+        false
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherScreen(info: DeviceInfo, binaries: List<BinaryPackage>) {
     val context = LocalContext.current
     var selectedFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var winePrefix by remember { mutableStateOf("/data/data/com.winenativehub/wineprefix") }
@@ -260,6 +540,10 @@ private fun LauncherScreen(info: DeviceInfo) {
     var box64On by remember { mutableStateOf(false) }
     var isRunning by remember { mutableStateOf(false) }
     var outputLog by remember { mutableStateOf<List<String>>(listOf("Ready. Select an .exe file to launch.")) }
+
+    val wineBin = binaries.find { it.name == "Wine" && it.isInstalled }
+    val box64Bin = binaries.find { it.name == "Box64" && it.isInstalled }
+    val dxvkBin = binaries.find { it.name == "DXVK" && it.isInstalled }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         selectedFiles = uris.mapNotNull { uri ->
@@ -271,6 +555,23 @@ private fun LauncherScreen(info: DeviceInfo) {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (wineBin == null) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF2D1B1B))) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("⚠️ Wine not installed", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold)
+                    Text("Go to Download tab and install Wine binary first.", color = Color(0xFFFFB8B8))
+                }
+            }
+        } else {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF0D2818))) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("✓ Wine ${wineBin.version} ready", color = Color(0xFF00FF41), fontWeight = FontWeight.Bold)
+                    if (box64Bin != null) Text("✓ Box64 ${box64Bin.version} available", color = Color(0xFF00FF41))
+                    if (dxvkBin != null) Text("✓ DXVK ${dxvkBin.version} available", color = Color(0xFF00FF41))
+                }
+            }
+        }
+
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF16213E))) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Launcher Config", style = MaterialTheme.typography.titleMedium, color = Color(0xFFE94560))
@@ -280,8 +581,8 @@ private fun LauncherScreen(info: DeviceInfo) {
                     Switch(checked = esyncOn, onCheckedChange = { esyncOn = it })
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Box64", color = Color.White)
-                    Switch(checked = box64On, onCheckedChange = { box64On = it })
+                    Text("Box64", color = if (box64Bin != null) Color.White else Color.Gray)
+                    Switch(checked = box64On, onCheckedChange = { box64On = it }, enabled = box64Bin != null)
                 }
 
                 OutlinedTextField(
@@ -327,14 +628,18 @@ private fun LauncherScreen(info: DeviceInfo) {
 
         Button(
             onClick = {
+                if (wineBin == null) {
+                    Toast.makeText(context, "Install Wine first!", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
                 if (selectedFiles.isEmpty()) {
                     Toast.makeText(context, "Select .exe first!", Toast.LENGTH_SHORT).show()
                     return@Button
                 }
                 isRunning = true
-                outputLog = listOf(">>> Starting Wine...")
+                outputLog = listOf(">>> Starting ${wineBin.binaryName} ${wineBin.version}...")
                 selectedFiles.forEach { name ->
-                    val cmd = buildCmd(box64On, esyncOn, winePrefix, name)
+                    val cmd = buildRealCmd(wineBin, box64Bin, dxvkBin, esyncOn, box64On, winePrefix, name)
                     outputLog = outputLog + "> ${cmd.joinToString(" ")}"
                     val res = execCmd(cmd.joinToString(" "))
                     outputLog = outputLog + res
@@ -343,7 +648,7 @@ private fun LauncherScreen(info: DeviceInfo) {
                 isRunning = false
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !isRunning && selectedFiles.isNotEmpty(),
+            enabled = !isRunning && selectedFiles.isNotEmpty() && wineBin != null,
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isRunning) Color.Gray else Color(0xFFE94560)
             )
@@ -352,7 +657,7 @@ private fun LauncherScreen(info: DeviceInfo) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
             }
-            Text(if (isRunning) "Running..." else "Launch")
+            Text(if (isRunning) "Running..." else "Launch with Wine")
         }
 
         if (outputLog.isNotEmpty()) {
@@ -376,12 +681,34 @@ private fun LauncherScreen(info: DeviceInfo) {
     }
 }
 
-private fun buildCmd(box64: Boolean, esync: Boolean, prefix: String, exe: String): List<String> {
+private fun buildRealCmd(
+    wine: BinaryPackage,
+    box64: BinaryPackage?,
+    dxvk: BinaryPackage?,
+    esync: Boolean,
+    box64On: Boolean,
+    prefix: String,
+    exe: String
+): List<String> {
     val parts = mutableListOf<String>()
-    if (box64) parts.add("box64")
-    parts.add("wine")
+
+    // Box64 wrapper
+    if (box64On && box64 != null) {
+        parts.add("${box64.installPath}/${box64.binaryName}")
+    }
+
+    // Wine binary
+    parts.add("${wine.installPath}/${wine.binaryName}")
+
+    // Environment variables
     parts.add("WINEPREFIX=$prefix")
     if (esync) parts.add("WINEESYNC=1")
+
+    // DXVK library path
+    if (dxvk != null) {
+        parts.add("LD_LIBRARY_PATH=${dxvk.installPath}:\$LD_LIBRARY_PATH")
+    }
+
     parts.add(exe)
     return parts
 }
