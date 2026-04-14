@@ -43,6 +43,7 @@ fun WineHubApp() {
     val context = LocalContext.current
     val deviceInfo = rememberDeviceInfo(context)
     var selectedTab by remember { mutableStateOf(0) }
+    var binaries by remember { mutableStateOf(getDefaultBinaries()) }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -62,7 +63,7 @@ fun WineHubApp() {
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF16213E)),
                     actions = {
                         IconButton(onClick = {
-                            Toast.makeText(context, "WineHub v1.0 - Wine for Android", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "WineHub v4.0", Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(Icons.Default.Info, "About", tint = Color.White)
                         }
@@ -73,9 +74,10 @@ fun WineHubApp() {
                 NavigationBar(containerColor = Color(0xFF16213E)) {
                     val items = listOf(
                         Triple(Icons.Default.Dashboard, "Status", 0),
-                        Triple(Icons.Default.PlayArrow, "Launch", 1),
-                        Triple(Icons.Default.Terminal, "Terminal", 2),
-                        Triple(Icons.Default.Settings, "Settings", 3)
+                        Triple(Icons.Default.Download, "Binary", 1),
+                        Triple(Icons.Default.PlayArrow, "Launch", 2),
+                        Triple(Icons.Default.Terminal, "Terminal", 3),
+                        Triple(Icons.Default.Settings, "Settings", 4)
                     )
                     items.forEach { (icon, label, idx) ->
                         NavigationBarItem(
@@ -99,9 +101,10 @@ fun WineHubApp() {
             Box(modifier = Modifier.padding(padding)) {
                 when (selectedTab) {
                     0 -> StatusScreen(deviceInfo)
-                    1 -> LauncherScreen(deviceInfo)
-                    2 -> TerminalScreen()
-                    3 -> SettingsScreen()
+                    1 -> DownloadScreen(binaries) { binaries = it }
+                    2 -> LauncherScreen(deviceInfo, binaries)
+                    3 -> TerminalScreen()
+                    4 -> SettingsScreen()
                 }
             }
         }
@@ -265,7 +268,7 @@ private fun InfoRow(label: String, value: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LauncherScreen(info: DeviceInfo) {
+private fun LauncherScreen(info: DeviceInfo, binaries: List<BinaryPackage>) {
     val context = LocalContext.current
     var selectedFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var winePrefix by remember { mutableStateOf("/data/data/com.winenativehub/wineprefix") }
@@ -273,6 +276,11 @@ private fun LauncherScreen(info: DeviceInfo) {
     var box64On by remember { mutableStateOf(false) }
     var isRunning by remember { mutableStateOf(false) }
     var outputLog by remember { mutableStateOf<List<String>>(listOf("Ready. Select an .exe file to launch.")) }
+
+    val box64Bin = binaries.find { it.name == "Box64" && it.isInstalled }
+    val dxvkBin = binaries.find { it.name == "DXVK" && it.isInstalled }
+    val winetricksBin = binaries.find { it.name == "Winetricks" && it.isInstalled }
+    val hasBinary = box64Bin != null || dxvkBin != null || winetricksBin != null
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         selectedFiles = uris.mapNotNull { uri ->
