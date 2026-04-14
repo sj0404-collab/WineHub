@@ -6,7 +6,10 @@ data class DeviceProfile(
     val gpuVendor: String,
     val vulkanSupported: Boolean,
     val vulkanApi: String = "1.0.0",
-    val hasDescriptorIndexing: Boolean = false
+    val hasDescriptorIndexing: Boolean = false,
+    val androidVersion: String = "",
+    val cpuCores: Int = 0,
+    val buildModel: String = ""
 )
 
 data class Profile(

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Wine glass body -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M42,22 L66,22 L58,52 Q56,58 54,60 Q52,58 50,52 L42,22z"/>
+    <!-- Stem -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M53,60 L55,60 L55,78 L53,78z"/>
+    <!-- Base -->
+    <path
+        android:fillColor="#E94560"
+        android:pathData="M42,78 L66,78 L66,82 L42,82z"/>
+</vector>
