@@ -171,26 +171,28 @@ fun getDefaultBinaries(): List<BinaryPackage> {
     )
 }
 
-fun downloadBinary(ctx: Context, pkg: BinaryPackage, onProgress: (Float) -> Unit): Boolean = try {
-    val instDir = File(pkg.installPath).apply { mkdirs() }
-    val cacheDir = ctx.cacheDir.apply { mkdirs() }
-    val ext = when { pkg.isDeb -> "deb"; pkg.isZip -> "zip"; pkg.downloadUrl.endsWith(".tar.gz") -> "tar.gz"; else -> "bin" }
-    val cf = File(cacheDir, "${pkg.name}-${pkg.version}.$ext")
-    val url = URL(pkg.downloadUrl); val conn = url.openConnection() as HttpURLConnection
-    conn.instanceFollowRedirects = true; conn.connectTimeout = 30000; conn.readTimeout = 120000; conn.connect()
-    if (conn.responseCode !in listOf(200, 302)) { android.util.Log.e("WH", "HTTP ${conn.responseCode}"); return false }
-    val total = conn.contentLengthLong; var dl = 0L
-    conn.inputStream.use { inp -> FileOutputStream(cf).use { out ->
-        val buf = ByteArray(16384); var r: Int
-        while (inp.read(buf).also { r = it } != -1) { out.write(buf, 0, r); dl += r; if (total > 0) onProgress((dl.toFloat() / total).coerceAtMost(1f)) }
-    }}; conn.disconnect()
-    val ok = when {
-        pkg.isDeb -> { exec("dpkg-deb -x ${cf.absolutePath} ${instDir.absolutePath}"); findBin(instDir, pkg.binaryName)?.setExecutable(true); findBin(instDir, pkg.binaryName) != null }
-        pkg.isZip -> { java.util.zip.ZipInputStream(FileInputStream(cf)).use { zis -> var e = zis.nextEntry; var f = false; while (e != null) { val n = e.name.substringAfterLast('/'); if (n.isNotEmpty()) { val o = File(instDir, n); o.parentFile?.mkdirs(); FileOutputStream(o).use { fos -> zis.copyTo(fos) }; o.setExecutable(true); if (n.contains(pkg.binaryName, true)) f = true }; e = zis.nextEntry }; f } }
-        ext == "tar.gz" -> { exec("tar -xzf ${cf.absolutePath} -C ${instDir.absolutePath}"); findBin(instDir, pkg.binaryName)?.setExecutable(true); findBin(instDir, pkg.binaryName) != null || instDir.walkTopDown().any { it.extension == "dll" } }
-        else -> { val d = File(instDir, pkg.binaryName); cf.copyTo(d, true); d.setExecutable(true); true }
-    }; cf.delete(); ok
-} catch (e: Exception) { android.util.Log.e("WH", "Err: ${e.message}"); false }
+fun downloadBinary(ctx: Context, pkg: BinaryPackage, onProgress: (Float) -> Unit): Boolean {
+    return try {
+        val instDir = File(pkg.installPath).apply { mkdirs() }
+        val cacheDir = ctx.cacheDir.apply { mkdirs() }
+        val ext = when { pkg.isDeb -> "deb"; pkg.isZip -> "zip"; pkg.downloadUrl.endsWith(".tar.gz") -> "tar.gz"; else -> "bin" }
+        val cf = File(cacheDir, "${pkg.name}-${pkg.version}.$ext")
+        val url = URL(pkg.downloadUrl); val conn = url.openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true; conn.connectTimeout = 30000; conn.readTimeout = 120000; conn.connect()
+        if (conn.responseCode !in listOf(200, 302)) { android.util.Log.e("WH", "HTTP ${conn.responseCode}"); return false }
+        val total = conn.contentLengthLong; var dl = 0L
+        conn.inputStream.use { inp -> FileOutputStream(cf).use { out ->
+            val buf = ByteArray(16384); var r: Int
+            while (inp.read(buf).also { r = it } != -1) { out.write(buf, 0, r); dl += r; if (total > 0) onProgress((dl.toFloat() / total).coerceAtMost(1f)) }
+        }}; conn.disconnect()
+        val ok = when {
+            pkg.isDeb -> { exec("dpkg-deb -x ${cf.absolutePath} ${instDir.absolutePath}"); findBin(instDir, pkg.binaryName)?.setExecutable(true); findBin(instDir, pkg.binaryName) != null }
+            pkg.isZip -> { java.util.zip.ZipInputStream(FileInputStream(cf)).use { zis -> var e = zis.nextEntry; var f = false; while (e != null) { val n = e.name.substringAfterLast('/'); if (n.isNotEmpty()) { val o = File(instDir, n); o.parentFile?.mkdirs(); FileOutputStream(o).use { fos -> zis.copyTo(fos) }; o.setExecutable(true); if (n.contains(pkg.binaryName, true)) f = true }; e = zis.nextEntry }; f } }
+            ext == "tar.gz" -> { exec("tar -xzf ${cf.absolutePath} -C ${instDir.absolutePath}"); findBin(instDir, pkg.binaryName)?.setExecutable(true); findBin(instDir, pkg.binaryName) != null || instDir.walkTopDown().any { it.extension == "dll" } }
+            else -> { val d = File(instDir, pkg.binaryName); cf.copyTo(d, true); d.setExecutable(true); true }
+        }; cf.delete(); ok
+    } catch (e: Exception) { android.util.Log.e("WH", "Err: ${e.message}"); false }
+}
 
 fun findBin(dir: File, name: String): File? = dir.walkTopDown().find { it.name == name && it.isFile }
 fun exec(cmd: String): String = try { val p = Runtime.getRuntime().exec(cmd); p.waitFor(); "[exit:${p.exitValue()}]" } catch (e: Exception) { "err:${e.message}" }
