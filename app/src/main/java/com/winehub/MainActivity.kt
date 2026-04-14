@@ -133,6 +133,19 @@ private fun rememberDeviceInfo(context: android.content.Context): DeviceInfo {
     }
 }
 
+data class BinaryPackage(
+    val name: String,
+    val version: String,
+    val downloadUrl: String,
+    val installPath: String,
+    val binaryName: String,
+    val isZip: Boolean = false,
+    val isDeb: Boolean = false,
+    val isInstalled: Boolean = false,
+    val downloadProgress: Float = 0f,
+    val isDownloading: Boolean = false
+)
+
 data class DeviceInfo(
     val cpuAbi: String,
     val totalMemoryMb: Long,
